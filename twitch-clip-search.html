@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipFinder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0c12;
+  --surface: #12121a;
+  --surface2: #181822;
+  --surface3: #1e1e2a;
+  --border: #22223a;
+  --border2: #2a2a42;
+  --purple: #9147ff;
+  --purple-dim: #6c35c7;
+  --purple-glow: rgba(145,71,255,0.12);
+  --purple-light: rgba(145,71,255,0.06);
+  --text: #e8e8f2;
+  --text-dim: #8888aa;
+  --text-muted: #44445a;
+  --green: #00e676;
+  --red: #ff5252;
+  --amber: #ffab40;
+  --cyan: #00e5ff;
+  --cyan-dim: rgba(0,229,255,0.08);
+  --cyan-border: rgba(0,229,255,0.18);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 300;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 85% 5%, rgba(145,71,255,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 5% 90%, rgba(0,229,255,0.04) 0%, transparent 55%);
+  pointer-events: none; z-index: 0;
+}
+.wrap { max-width: 1140px; margin: 0 auto; padding: 0 28px; position: relative; z-index: 1; }
+
+/* HEADER */
+header {
+  padding: 36px 0 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-mark {
+  width: 38px; height: 38px; background: var(--purple); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 19px;
+  box-shadow: 0 4px 20px rgba(145,71,255,0.35);
+}
+.logo-name { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+.logo-name em { color: var(--purple); font-style: normal; }
+.status-pill {
+  display: flex; align-items: center; gap: 7px;
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* SETUP CARD */
+.setup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.setup-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px; cursor: pointer; user-select: none;
+}
+.setup-header-left { display: flex; align-items: center; gap: 12px; }
+.setup-tag {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);
+}
+.badge {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  padding: 2px 9px; border-radius: 5px;
+  background: rgba(255,82,82,0.12); color: var(--red);
+  border: 1px solid rgba(255,82,82,0.25);
+}
+.badge.ok { background: rgba(0,230,118,0.1); color: var(--green); border-color: rgba(0,230,118,0.25); }
+.chevron { color: var(--text-muted); font-size: 11px; transition: transform 0.2s; }
+.chevron.up { transform: rotate(180deg); }
+.setup-body { padding: 0 22px 22px; border-top: 1px solid var(--border); }
+.setup-hint {
+  font-size: 12.5px; color: var(--text-dim); line-height: 1.7;
+  padding: 16px 0 14px;
+}
+.setup-hint a { color: var(--purple); text-decoration: none; }
+.setup-hint a:hover { text-decoration: underline; }
+.setup-hint code {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 1px 6px;
+  font-family: 'DM Mono', monospace; font-size: 11.5px; color: var(--cyan);
+}
+.setup-fields { display: flex; gap: 12px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .9px; color: var(--text-muted);
+}
+input, select {
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 9px; color: var(--text);
+  font-family: 'DM Mono', monospace; font-size: 13px;
+  padding: 10px 14px; width: 100%;
+  outline: none; transition: border-color .15s, box-shadow .15s;
+  -webkit-appearance: none;
+}
+input:focus, select:focus {
+  border-color: var(--purple); box-shadow: 0 0 0 3px var(--purple-glow);
+}
+input::placeholder { color: var(--text-muted); }
+.btn {
+  border: none; border-radius: 9px; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; font-weight: 600;
+  transition: all .15s; white-space: nowrap;
+}
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary {
+  background: var(--purple); color: #fff;
+  padding: 10px 22px; font-size: 13px;
+  box-shadow: 0 2px 12px rgba(145,71,255,.25);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--purple-dim);
+  box-shadow: 0 4px 20px rgba(145,71,255,.4);
+}
+.btn-sm {
+  background: var(--surface2); border: 1px solid var(--border2);
+  color: var(--text-dim); padding: 7px 14px; font-size: 12px;
+}
+.btn-sm:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); }
+
+/* SEARCH PANEL */
+.search-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  margin-bottom: 26px;
+}
+.search-row1 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.search-row2 { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 14px; align-items: flex-end; }
+.btn-search {
+  background: var(--purple); color: #fff;
+  padding: 0 28px; height: 42px; font-size: 14px;
+  font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: .2px;
+  border-radius: 9px; border: none; cursor: pointer;
+  box-shadow: 0 2px 14px rgba(145,71,255,.3);
+  transition: all .15s; white-space: nowrap;
+}
+.btn-search:hover:not(:disabled) {
+  background: var(--purple-dim);
+  box-shadow: 0 4px 24px rgba(145,71,255,.45);
+  transform: translateY(-1px);
+}
+.btn-search:active { transform: scale(.98); }
+.btn-search:disabled { opacity: .4; cursor: not-allowed; }
+.btn-clear {
+  background: transparent; border: 1px solid var(--border2);
+  color: var(--text-muted); padding: 0 16px; height: 42px;
+  border-radius: 9px; font-size: 13px; cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+  font-family: 'DM Sans', sans-serif;
+}
+.btn-clear:hover { border-color: var(--red); color: var(--red); }
+
+/* EXCLUDE PANEL */
+.exclude-panel {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  display: none;
+}
+.exclude-panel.visible { display: block; }
+.exclude-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.exclude-title {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 8px;
+}
+.exclude-count {
+  background: rgba(255,82,82,0.12); color: var(--red);
+  border: 1px solid rgba(255,82,82,0.2);
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  padding: 1px 7px; border-radius: 4px;
+}
+.exclude-actions { display: flex; gap: 6px; }
+.exclude-grid {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-height: 130px; overflow-y: auto;
+  padding: 2px 0;
+}
+.exclude-grid::-webkit-scrollbar { width: 4px; }
+.exclude-grid::-webkit-scrollbar-track { background: transparent; }
+.exclude-grid::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.cat-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 5px 10px; cursor: pointer;
+  transition: all .12s; user-select: none;
+}
+.cat-chip:hover { border-color: var(--border); background: var(--surface3); }
+.cat-chip.excluded {
+  background: rgba(255,82,82,0.08);
+  border-color: rgba(255,82,82,0.3);
+}
+.chip-check {
+  width: 14px; height: 14px; border-radius: 4px;
+  border: 1.5px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .12s;
+  font-size: 9px; color: transparent;
+}
+.cat-chip.excluded .chip-check {
+  background: var(--red); border-color: var(--red); color: #fff;
+}
+.chip-name { font-size: 12px; color: var(--text-dim); line-height: 1; }
+.cat-chip.excluded .chip-name { color: var(--red); }
+
+/* ERROR */
+.error-bar {
+  background: rgba(255,82,82,0.08); border: 1px solid rgba(255,82,82,0.2);
+  border-radius: 9px; color: #ff8080;
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  padding: 12px 16px; margin-top: 14px; display: none;
+}
+
+/* RESULTS HEADER */
+.results-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
+}
+.results-info {
+  font-family: 'DM Mono', monospace; font-size: 11.5px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .8px;
+}
+.results-info strong { color: var(--text); font-weight: 500; }
+.controls { display: flex; gap: 7px; flex-wrap: wrap; }
+.ctrl-btn {
+  background: transparent; border: 1px solid var(--border2);
+  border-radius: 7px; color: var(--text-muted);
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .8px;
+  padding: 5px 11px; cursor: pointer; transition: all .15s;
+}
+.ctrl-btn.active, .ctrl-btn:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-light); }
+
+/* CLIP GRID */
+.clips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px; margin-bottom: 28px;
+}
+.clip-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 11px; overflow: hidden; cursor: pointer;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.clip-card:hover {
+  border-color: rgba(145,71,255,.45);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 36px rgba(0,0,0,.45);
+}
+.thumb-wrap { position: relative; aspect-ratio: 16/9; background: var(--surface2); overflow: hidden; }
+.thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
+.clip-card:hover .thumb-wrap img { transform: scale(1.04); }
+.play-ring {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0); transition: background .2s;
+}
+.clip-card:hover .play-ring { background: rgba(0,0,0,.28); }
+.play-btn {
+  width: 46px; height: 46px; background: rgba(145,71,255,.92);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transform: scale(.75);
+  transition: opacity .18s, transform .18s;
+  box-shadow: 0 4px 20px rgba(145,71,255,.5);
+}
+.clip-card:hover .play-btn { opacity: 1; transform: scale(1); }
+.thumb-dur {
+  position: absolute; bottom: 8px; right: 8px;
+  background: rgba(0,0,0,.82); color: #fff;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  padding: 2px 7px; border-radius: 4px;
+}
+.thumb-views {
+  position: absolute; bottom: 8px; left: 8px;
+  background: rgba(0,0,0,.82); color: var(--text-dim);
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  padding: 2px 7px; border-radius: 4px;
+}
+.card-body { padding: 12px 14px 14px; }
+.card-title {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  line-height: 1.45; margin-bottom: 9px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.game-chip {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--cyan); background: var(--cyan-dim);
+  border: 1px solid var(--cyan-border);
+  padding: 2px 8px; border-radius: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;
+}
+.card-date { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.card-creator { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+
+/* PAGINATION */
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 4px 0 44px;
+}
+.pg-btn {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 8px; color: var(--text-dim);
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  padding: 8px 18px; cursor: pointer; transition: all .15s;
+}
+.pg-btn:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); }
+.pg-btn:disabled { opacity: .3; cursor: not-allowed; }
+.pg-info { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); padding: 0 10px; }
+
+/* MODAL */
+.overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.88);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+  backdrop-filter: blur(8px);
+}
+.overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 16px; overflow: hidden;
+  max-width: 880px; width: 100%;
+  transform: scale(.94); transition: transform .2s;
+}
+.overlay.open .modal { transform: scale(1); }
+.modal-vid { position: relative; aspect-ratio: 16/9; background: #000; }
+.modal-vid iframe { width: 100%; height: 100%; display: block; border: none; }
+.modal-foot {
+  padding: 15px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.modal-text .modal-title { font-size: 15px; font-weight: 500; }
+.modal-text .modal-sub { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.modal-btns { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.modal-link {
+  background: var(--surface2); border: 1px solid var(--border2);
+  color: var(--text-dim); padding: 8px 13px; border-radius: 8px;
+  text-decoration: none; font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  transition: all .15s; display: inline-flex; align-items: center; gap: 5px;
+}
+.modal-link:hover { border-color: var(--purple); color: var(--purple); }
+.modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 22px; cursor: pointer; padding: 4px 8px; transition: color .15s; line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+
+/* STATES */
+.state-box { text-align: center; padding: 80px 24px; }
+.state-icon { font-size: 42px; margin-bottom: 14px; opacity: .35; }
+.state-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
+.state-sub { font-size: 14px; color: var(--text-muted); line-height: 1.65; max-width: 400px; margin: 0 auto; }
+.loading-box { text-align: center; padding: 70px; }
+.spinner {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 2px solid var(--border2); border-top-color: var(--purple);
+  animation: spin .7s linear infinite; margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-msg { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+@media (max-width: 680px) {
+  .search-row1, .search-row2 { grid-template-columns: 1fr; }
+  .btn-search, .btn-clear { width: 100%; height: 46px; }
+  .clips-grid { grid-template-columns: 1fr; }
+  .setup-fields { flex-direction: column; }
+  .modal-foot { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-mark">🎬</div>
+      <div class="logo-name">Clip<em>Finder</em></div>
+    </div>
+    <div class="status-pill">
+      <div class="dot" id="sDot"></div>
+      <span id="sText">Not configured</span>
+    </div>
+  </header>
+
+  <!-- SETUP -->
+  <div class="setup-card" id="setupCard">
+    <div class="setup-header" onclick="toggleSetup()">
+      <div class="setup-header-left">
+        <span class="setup-tag">Configuration</span>
+        <span class="badge" id="setupBadge">Setup required</span>
+      </div>
+      <span class="chevron up" id="setupChevron">▼</span>
+    </div>
+    <div class="setup-body" id="setupBody">
+      <div class="setup-hint">
+        <strong style="color:var(--text)">One-time setup — takes about 3 minutes.</strong><br><br>
+        1. Go to <a href="https://dev.twitch.tv/console/apps/create" target="_blank">dev.twitch.tv/console/apps/create</a><br>
+        2. Name the app anything (e.g. <code>ClipFinder</code>), set OAuth redirect to <code>http://localhost</code>, category: <strong>Other</strong><br>
+        3. Click <strong>Manage</strong> → copy your <strong>Client ID</strong> → click <strong>New Secret</strong> → copy it<br>
+        4. Paste both below and hit <strong>Save &amp; Connect</strong><br><br>
+        <em style="color:var(--text-muted)">Credentials are saved in your browser only (localStorage). No server ever receives them. The Client Secret is used once to fetch a read-only app token and is not stored in memory after that.</em>
+      </div>
+      <div class="setup-fields">
+        <div class="field">
+          <label>Client ID</label>
+          <input type="text" id="cfgId" placeholder="Paste Client ID here">
+        </div>
+        <div class="field">
+          <label>Client Secret</label>
+          <input type="password" id="cfgSecret" placeholder="Paste Client Secret here">
+        </div>
+        <button class="btn btn-primary" id="btnSave" onclick="saveAndConnect()">Save &amp; Connect</button>
+      </div>
+      <div class="error-bar" id="setupError"></div>
+    </div>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-card">
+    <div class="search-row1">
+      <div class="field">
+        <label>Channel Name</label>
+        <input type="text" id="fChannel" placeholder="e.g. xqc, pokimane…" onkeydown="if(event.key==='Enter')doSearch()">
+      </div>
+      <div class="field">
+        <label>From Date</label>
+        <input type="date" id="fFrom">
+      </div>
+      <div class="field">
+        <label>To Date</label>
+        <input type="date" id="fTo">
+      </div>
+    </div>
+    <div class="search-row2">
+      <div class="field">
+        <label>Keyword (searches clip titles)</label>
+        <input type="text" id="fKeyword" placeholder="e.g. clutch, fail, funny…" onkeydown="if(event.key==='Enter')doSearch()">
+      </div>
+      <div class="field">
+        <label>Results per page</label>
+        <select id="fPageSize">
+          <option value="20">20 per page</option>
+          <option value="50" selected>50 per page</option>
+          <option value="100">100 per page</option>
+        </select>
+      </div>
+      <button class="btn-search" id="btnSearch" onclick="doSearch()" disabled>Search</button>
+      <button class="btn-clear" id="btnClear" onclick="clearAll()" style="display:none">Clear</button>
+    </div>
+
+    <!-- EXCLUDE CATEGORIES -->
+    <div class="exclude-panel" id="excludePanel">
+      <div class="exclude-header">
+        <div class="exclude-title">
+          Exclude Categories
+          <span class="exclude-count" id="excludeCount" style="display:none"></span>
+        </div>
+        <div class="exclude-actions">
+          <button class="btn btn-sm" onclick="selectAllCats(false)">Clear all</button>
+          <button class="btn btn-sm" onclick="applyExclusions()">Apply</button>
+        </div>
+      </div>
+      <div class="exclude-grid" id="excludeGrid"></div>
+    </div>
+
+    <div class="error-bar" id="searchError"></div>
+  </div>
+
+  <div id="resultsArea">
+    <div class="state-box">
+      <div class="state-icon">🎬</div>
+      <div class="state-title">Ready to search</div>
+      <div class="state-sub">Configure your API credentials above, then enter a channel name to get started.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay" onclick="closeOverlay(event)">
+  <div class="modal">
+    <div class="modal-vid" id="modalVid"></div>
+    <div class="modal-foot">
+      <div class="modal-text">
+        <div class="modal-title" id="mTitle"></div>
+        <div class="modal-sub" id="mSub"></div>
+      </div>
+      <div class="modal-btns">
+        <a class="modal-link" id="mLink" href="#" target="_blank">↗ Open on Twitch</a>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'clipfinder_creds_v1';
+let token = null;
+let clientId = null;
+let allClips = [];
+let filteredClips = [];
+let currentPage = 1;
+let perPage = 50;
+let twCursor = null;
+let lastBroadcasterId = null;
+let lastParams = {};
+let sortMode = 'date';
+let excludedCats = new Set();
+let allCats = [];
+let setupOpen = true;
+
+// ── INIT ──────────────────────────────────────────────
+(function init() {
+  const now = new Date(), past = new Date();
+  past.setDate(past.getDate() - 90);
+  document.getElementById('fTo').value = fmt(now);
+  document.getElementById('fFrom').value = fmt(past);
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved?.id && saved?.secret) {
+      document.getElementById('cfgId').value = saved.id;
+      document.getElementById('cfgSecret').value = saved.secret;
+      autoConnect(saved.id, saved.secret);
+    }
+  } catch(e) {}
+})();
+
+function fmt(d) { return d.toISOString().split('T')[0]; }
+
+// ── SETUP ─────────────────────────────────────────────
+function toggleSetup() {
+  setupOpen = !setupOpen;
+  document.getElementById('setupBody').style.display = setupOpen ? '' : 'none';
+  document.getElementById('setupChevron').className = 'chevron' + (setupOpen ? ' up' : '');
+}
+
+async function autoConnect(id, secret) {
+  try { await fetchToken(id, secret); markConnected(id); }
+  catch(e) { setStatus(false, 'Token expired — reconnect'); }
+}
+
+async function saveAndConnect() {
+  const id = document.getElementById('cfgId').value.trim();
+  const secret = document.getElementById('cfgSecret').value.trim();
+  if (!id || !secret) { showSetupErr('Enter both Client ID and Secret.'); return; }
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  hideSetupErr();
+  try {
+    await fetchToken(id, secret);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, secret }));
+    clientId = id;
+    markConnected(id);
+  } catch(e) {
+    showSetupErr('Connection failed: ' + e.message + '. Double-check your credentials.');
+    btn.disabled = false; btn.textContent = 'Save & Connect';
+  }
+}
+
+async function fetchToken(id, secret) {
+  // Route through corsproxy.io to avoid browser CORS block on Twitch's token endpoint
+  const target = `https://id.twitch.tv/oauth2/token?client_id=${id}&client_secret=${secret}&grant_type=client_credentials`;
+  const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(target)}`, { method: 'POST' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  if (!d.access_token) throw new Error(d.message || 'No token returned');
+  token = d.access_token;
+  clientId = id;
+}
+
+function markConnected(id) {
+  document.getElementById('btnSave').disabled = false;
+  document.getElementById('btnSave').textContent = 'Reconnect';
+  document.getElementById('setupBadge').className = 'badge ok';
+  document.getElementById('setupBadge').textContent = 'Connected';
+  document.getElementById('btnSearch').disabled = false;
+  setStatus(true, `Connected · ${id.slice(0,8)}…`);
+  toggleSetup();
+}
+
+function setStatus(on, txt) {
+  document.getElementById('sDot').className = 'dot' + (on ? ' on' : '');
+  document.getElementById('sText').textContent = txt;
+}
+
+// ── SEARCH ────────────────────────────────────────────
+async function doSearch(append = false) {
+  if (!token) { showSearchErr('Connect to the Twitch API first.'); return; }
+  const channel = document.getElementById('fChannel').value.trim();
+  if (!channel) { showSearchErr('Enter a channel name.'); return; }
+  hideSearchErr();
+
+  perPage = parseInt(document.getElementById('fPageSize').value);
+  const keyword = document.getElementById('fKeyword').value.trim().toLowerCase();
+  const dateFrom = document.getElementById('fFrom').value;
+  const dateTo = document.getElementById('fTo').value;
+
+  if (!append) {
+    allClips = []; filteredClips = [];
+    twCursor = null; lastBroadcasterId = null;
+    currentPage = 1; sortMode = 'date';
+    allCats = []; excludedCats = new Set();
+    document.getElementById('excludePanel').className = 'exclude-panel';
+    lastParams = { channel, keyword, dateFrom, dateTo };
+    document.getElementById('btnClear').style.display = '';
+  }
+
+  showLoading('Fetching clips…');
+
+  try {
+    if (!lastBroadcasterId) {
+      const u = await twGet(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(channel)}`);
+      if (!u.data?.length) throw new Error(`Channel "${channel}" not found`);
+      lastBroadcasterId = u.data[0].id;
+    }
+    await fetchUntil(filteredClips.length + perPage * 3);
+    buildCatList();
+    applyFilters();
+    renderResults();
+  } catch(e) {
+    showSearchErr(e.message || 'Something went wrong.');
+    if (!append) document.getElementById('resultsArea').innerHTML = '';
+  }
+}
+
+async function fetchUntil(target) {
+  let attempts = 0;
+  while ((filteredClips.length < target && twCursor !== null) || allClips.length === 0) {
+    if (attempts++ > 20) break;
+    let url = `https://api.twitch.tv/helix/clips?broadcaster_id=${lastBroadcasterId}&first=100`;
+    const { dateFrom, dateTo } = lastParams;
+    if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
+    if (dateTo) { const e = new Date(dateTo); e.setHours(23,59,59,999); url += `&ended_at=${e.toISOString()}`; }
+    if (twCursor) url += `&after=${twCursor}`;
+
+    const data = await twGet(url);
+    const clips = data.data || [];
+    if (!clips.length) { twCursor = null; break; }
+
+    // Resolve new game names
+    const knownIds = new Set(allClips.map(c => c.game_id));
+    const newIds = [...new Set(clips.map(c => c.game_id).filter(id => id && !knownIds.has(id)))];
+    const gameMap = await fetchGames(newIds);
+    clips.forEach(c => { c._gameName = gameMap[c.game_id] || (c.game_id ? 'Unknown' : 'N/A'); });
+
+    allClips.push(...clips);
+    twCursor = data.pagination?.cursor || null;
+
+    const kw = lastParams.keyword;
+    clips.forEach(c => {
+      if (kw && !c.title.toLowerCase().includes(kw)) return;
+      if (excludedCats.has(c.game_id)) return;
+      filteredClips.push(c);
+    });
+
+    if (!twCursor) break;
+  }
+}
+
+async function fetchGames(ids) {
+  if (!ids.length) return {};
+  const map = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const qs = ids.slice(i, i+100).map(id => `id=${id}`).join('&');
+    try { const d = await twGet(`https://api.twitch.tv/helix/games?${qs}`); (d.data||[]).forEach(g => { map[g.id] = g.name; }); } catch(e) {}
+  }
+  return map;
+}
+
+async function twGet(url) {
+  const r = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Client-Id': clientId } });
+  if (r.status === 401) {
+    try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY)); await fetchToken(s.id, s.secret); return twGet(url); }
+    catch(e) { throw new Error('Session expired. Please reconnect in Configuration.'); }
+  }
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || `API error ${r.status}`); }
+  return r.json();
+}
+
+// ── CATEGORIES ────────────────────────────────────────
+function buildCatList() {
+  const seen = new Set(allCats.map(c => c.id));
+  allClips.forEach(c => {
+    if (!seen.has(c.game_id)) { seen.add(c.game_id); allCats.push({ id: c.game_id, name: c._gameName }); }
+  });
+  allCats.sort((a, b) => a.name.localeCompare(b.name));
+  renderCatChips();
+  document.getElementById('excludePanel').className = 'exclude-panel visible';
+}
+
+function renderCatChips() {
+  document.getElementById('excludeGrid').innerHTML = allCats.map(cat => {
+    const ex = excludedCats.has(cat.id);
+    return `<div class="cat-chip ${ex?'excluded':''}" onclick="toggleCat('${cat.id.replace(/'/g,"\\'")}')">
+      <div class="chip-check">${ex?'✕':''}</div>
+      <span class="chip-name">${cat.name.replace(/</g,'&lt;')}</span>
+    </div>`;
+  }).join('');
+  updateExcludeCount();
+}
+
+function toggleCat(id) {
+  excludedCats.has(id) ? excludedCats.delete(id) : excludedCats.add(id);
+  renderCatChips();
+}
+
+function selectAllCats(excl) {
+  excludedCats.clear();
+  if (excl) allCats.forEach(c => excludedCats.add(c.id));
+  renderCatChips();
+}
+
+function updateExcludeCount() {
+  const el = document.getElementById('excludeCount');
+  el.style.display = excludedCats.size > 0 ? '' : 'none';
+  el.textContent = `${excludedCats.size} excluded`;
+}
+
+function applyExclusions() { applyFilters(); renderResults(); }
+
+function applyFilters() {
+  const kw = lastParams.keyword;
+  filteredClips = allClips.filter(c => {
+    if (kw && !c.title.toLowerCase().includes(kw)) return false;
+    if (excludedCats.has(c.game_id)) return false;
+    return true;
+  });
+  if (sortMode === 'views') filteredClips.sort((a, b) => b.view_count - a.view_count);
+  currentPage = 1;
+}
+
+// ── RENDER ────────────────────────────────────────────
+function renderResults() {
+  const total = filteredClips.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * perPage;
+  const page = filteredClips.slice(start, start + perPage);
+  const hasMore = twCursor !== null;
+
+  if (total === 0) {
+    document.getElementById('resultsArea').innerHTML = `<div class="state-box"><div class="state-icon">🔍</div><div class="state-title">No clips found</div><div class="state-sub">Try widening your date range, changing the keyword, or adjusting your category exclusions.</div></div>`;
+    return;
+  }
+
+  document.getElementById('resultsArea').innerHTML = `
+    <div class="results-bar">
+      <div class="results-info">Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips${hasMore?' <span style="color:var(--amber)">· more available</span>':''}</div>
+      <div class="controls">
+        <button class="ctrl-btn ${sortMode==='date'?'active':''}" onclick="setSort('date')">By Date</button>
+        <button class="ctrl-btn ${sortMode==='views'?'active':''}" onclick="setSort('views')">By Views</button>
+        ${hasMore?`<button class="ctrl-btn" onclick="loadMore()">Load more ↓</button>`:''}
+      </div>
+    </div>
+    <div class="clips-grid">${page.map(clipCard).join('')}</div>
+    ${totalPages > 1 ? `<div class="pagination">
+      <button class="pg-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Prev</button>
+      <span class="pg-info">Page ${currentPage} / ${totalPages}</span>
+      <button class="pg-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>Next →</button>
+    </div>` : ''}`;
+}
+
+function clipCard(c) {
+  const date = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const views = c.view_count >= 1000 ? `${(c.view_count/1000).toFixed(1)}k` : c.view_count;
+  const dur = c.duration ? `${Math.round(c.duration)}s` : '';
+  const t = c.title.replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/'/g,'&#39;');
+  const g = (c._gameName||'').replace(/</g,'&lt;').replace(/'/g,'&#39;');
+  const id = encodeURIComponent(c.id);
+  const url = encodeURIComponent(c.url);
+  return `<div class="clip-card" onclick="openClip('${id}','${url}','${encodeURIComponent(c.title)}','${encodeURIComponent((c._gameName||'')+'·'+date+'·'+views+' views')}','${url}')">
+    <div class="thumb-wrap">
+      <img src="${c.thumbnail_url||''}" alt="${t}" loading="lazy" onerror="this.style.opacity=0">
+      <div class="play-ring"><div class="play-btn"><svg width="14" height="16" viewBox="0 0 14 16" fill="white"><path d="M0 0l14 8-14 8z"/></svg></div></div>
+      ${dur?`<div class="thumb-dur">${dur}</div>`:''}
+      <div class="thumb-views">👁 ${views}</div>
+    </div>
+    <div class="card-body">
+      <div class="card-title">${t}</div>
+      <div class="card-foot"><span class="game-chip">${g||'Unknown'}</span><span class="card-date">${date}</span></div>
+      <div class="card-creator">clipped by ${c.creator_name||'unknown'}</div>
+    </div>
+  </div>`;
+}
+
+function goPage(p) { currentPage = p; renderResults(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+function setSort(mode) { sortMode = mode; applyFilters(); renderResults(); }
+
+async function loadMore() {
+  showLoading('Loading more clips…');
+  try {
+    await fetchUntil(filteredClips.length + perPage * 3);
+    buildCatList(); applyFilters(); renderResults();
+  } catch(e) { showSearchErr(e.message); }
+}
+
+function clearAll() {
+  allClips=[]; filteredClips=[]; twCursor=null; lastBroadcasterId=null;
+  currentPage=1; allCats=[]; excludedCats=new Set();
+  document.getElementById('excludePanel').className='exclude-panel';
+  document.getElementById('btnClear').style.display='none';
+  document.getElementById('fChannel').value='';
+  document.getElementById('fKeyword').value='';
+  document.getElementById('resultsArea').innerHTML=`<div class="state-box"><div class="state-icon">🎬</div><div class="state-title">Ready to search</div><div class="state-sub">Enter a channel name and hit Search to browse their clips without the infinite scroll headache.</div></div>`;
+}
+
+// ── MODAL ─────────────────────────────────────────────
+function openClip(idEnc, _u, titleEnc, subEnc, linkEnc) {
+  const id = decodeURIComponent(idEnc);
+  document.getElementById('mTitle').textContent = decodeURIComponent(titleEnc);
+  document.getElementById('mSub').textContent = decodeURIComponent(subEnc).replace(/·/g,' · ');
+  document.getElementById('mLink').href = decodeURIComponent(linkEnc);
+  const host = location.hostname || 'localhost';
+  document.getElementById('modalVid').innerHTML = `<iframe src="https://clips.twitch.tv/embed?clip=${id}&parent=${host}&autoplay=true" allowfullscreen scrolling="no"></iframe>`;
+  document.getElementById('overlay').className = 'overlay open';
+  document.body.style.overflow = 'hidden';
+}
+function closeOverlay(e) { if (e.target===document.getElementById('overlay')) closeModal(); }
+function closeModal() {
+  document.getElementById('overlay').className='overlay';
+  document.getElementById('modalVid').innerHTML='';
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// ── UTILS ─────────────────────────────────────────────
+function showLoading(msg) { document.getElementById('resultsArea').innerHTML=`<div class="loading-box"><div class="spinner"></div><div class="loading-msg">${msg}</div></div>`; }
+function showSearchErr(msg) { const e=document.getElementById('searchError'); e.textContent=msg; e.style.display=''; }
+function hideSearchErr() { document.getElementById('searchError').style.display='none'; }
+function showSetupErr(msg) { const e=document.getElementById('setupError'); e.textContent=msg; e.style.display=''; }
+function hideSetupErr() { document.getElementById('setupError').style.display='none'; }
+</script>
+</body>
+</html>

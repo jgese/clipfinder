@@ -392,7 +392,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
         <input class="tw-input" type="text" id="fKeyword" placeholder="Searches clip titles…"
           oninput="markFilled(this)" onkeydown="if(event.key==='Enter')doSearch()">
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;overflow:hidden;">
         <div class="field">
           <label class="tw-label" style="color:var(--twitch-text-dim);">From</label>
           <input class="tw-input date-input" type="date" id="fFrom">
@@ -412,7 +412,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
       </div>
 
       <button class="tw-btn tw-btn-primary" id="btnSearch" onclick="doSearch()" disabled style="border-radius:999px;letter-spacing:0.02em;">Search Clips</button>
-      <button class="tw-btn tw-btn-destructive" id="btnClear" onclick="clearAll()" style="display:none;margin-top:6px">Clear Results</button>
+      <button class="tw-btn tw-btn-destructive" id="btnClear" onclick="clearAll()" style="display:none;margin-top:6px;border-radius:999px;">Clear Results</button>
 
       <div class="error-bar" id="searchError"></div>
 
@@ -429,7 +429,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
     <!-- EXCLUDE CATEGORIES -->
     <div class="sidebar-section exclude-section" id="excludeSection">
-      <div class="sidebar-label">
+      <div class="sidebar-label" style="font-size:15px;color:var(--twitch-text-dim);letter-spacing:0.04em;text-transform:none;font-weight:700;">
         <span>Exclude Categories</span>
         <span class="exclude-badge" id="excludeBadge" style="display:none"></span>
       </div>
@@ -618,7 +618,7 @@ function toggleFeatured() {
   const sideBtn = document.getElementById('btnFeatured');
   if (sideBtn) {
     sideBtn.className = 'tw-btn-toggle' + (featuredOnly ? ' featured-active' : '');
-    sideBtn.textContent = featuredOnly ? '⭐ Featured Only (on)' : '⭐ Featured Clips Only';
+    sideBtn.textContent = featuredOnly ? '⭐ Featured Only (on)' : '⭐ Featured Only';
   }
   if (filteredClips.length > 0 || allClips.length > 0) {
     applyFilters();
@@ -998,7 +998,7 @@ function clearAll() {
   document.getElementById('excludeSection').className='sidebar-section exclude-section';
   document.getElementById('btnClear').style.display='none';
   document.getElementById('btnFeatured').className='tw-btn-toggle';
-  document.getElementById('btnFeatured').textContent='⭐ Featured Clips Only';
+  document.getElementById('btnFeatured').textContent='⭐ Featured Only';
   ['fChannel','fGame','fKeyword'].forEach(id=>{
     const el=document.getElementById(id); el.value=''; el.classList.remove('filled');
   });

@@ -51,15 +51,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.45) sepia(0) saturate(0) brightness(1.4);
   cursor: pointer;
   opacity: 0.5;
-  margin-left: -6px;
+  width: 12px;
+  height: 12px;
+  margin-left: 2px;
+  padding: 0;
   flex-shrink: 0;
 }
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 0.8;
 }
-/* Tighten date input to prevent overflow in sidebar */
 .date-input {
-  padding-right: 4px !important;
+  padding-right: 6px !important;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* ── TOPNAV ───────────────────────────────────── */
@@ -392,7 +397,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
         <input class="tw-input" type="text" id="fKeyword" placeholder="Searches clip titles…"
           oninput="markFilled(this)" onkeydown="if(event.key==='Enter')doSearch()">
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;overflow:hidden;width:100%;">
         <div class="field">
           <label class="tw-label" style="color:var(--twitch-text-dim);">From</label>
           <input class="tw-input date-input" type="date" id="fFrom">

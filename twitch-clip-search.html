@@ -467,12 +467,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
         </div>
       </div>
       <div class="setup-body" id="setupBody">
-        <div class="setup-hint">
-          1. <a href="https://dev.twitch.tv/console/apps/create" target="_blank">Register a Twitch app</a><br>
-          2. OAuth redirect → <code>http://localhost</code>, category → <strong>Other</strong><br>
-          3. Copy <strong>Client ID</strong> + generate a <strong>Secret</strong><br>
-          4. Paste below and connect
-        </div>
         <div class="field">
           <label class="tw-label">Client ID</label>
           <input class="tw-input" type="text" id="cfgId" placeholder="Paste Client ID">
@@ -557,7 +551,8 @@ let setupOpen = true;
   document.getElementById('fTo').value = fmtDate(now);
   document.getElementById('fFrom').value = fmtDate(past);
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    setDefaultDates();
+  const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (s?.id && s?.secret) {
       document.getElementById('cfgId').value = s.id;
       document.getElementById('cfgSecret').value = s.secret;
@@ -571,7 +566,22 @@ function markFilled(el) { el.classList.toggle('filled', el.value.trim().length >
 
 function resetToHome() {
   clearAll();
+  ['fChannel','fGame','fKeyword'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.value='';el.classList.remove('filled');}
+  });
+  setDefaultDates();
+  document.getElementById('searchCtx').className='search-ctx';
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function setDefaultDates() {
+  const today = new Date();
+  const yearAgo = new Date(today);
+  yearAgo.setFullYear(today.getFullYear() - 1);
+  const fmt = d => d.toISOString().split('T')[0];
+  document.getElementById('fFrom').value = fmt(yearAgo);
+  document.getElementById('fTo').value = fmt(today);
 }
 
 // ── SETUP ─────────────────────────────────────

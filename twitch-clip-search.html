@@ -286,8 +286,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .sort-arrow { font-size: 10px; opacity: 0.8; }
 
 /* ── CLIP GRID ────────────────────────────────── */
+@keyframes cardIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
 .clips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 24px; }
-.clip-card { background: var(--twitch-surface); border-radius: var(--radius-lg); overflow: hidden; transition: transform .15s, box-shadow .15s; }
+.clip-card { background: var(--twitch-surface); border-radius: var(--radius-lg); overflow: hidden; transition: transform .15s, box-shadow .15s; animation: cardIn .22s ease both; }
 .clip-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .clip-thumb { position: relative; aspect-ratio: 16/9; background: var(--twitch-surface2); overflow: hidden; cursor: pointer; }
 .clip-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s; }
@@ -379,6 +380,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   </div>
   <div class="topnav-right"></div>
 </nav>
+<div id="fetchBar" style="height:3px;background:var(--twitch-surface2);position:sticky;top:50px;z-index:49;overflow:hidden;">
+  <div id="fetchBarFill" style="height:100%;width:0%;background:var(--twitch-purple);transition:width .4s ease;box-shadow:0 0 8px rgba(145,71,255,.6);"></div>
+</div>
 
 <div class="app-layout">
 
@@ -720,6 +724,11 @@ async function doSearch() {
   document.getElementById('btnClear').style.display = '';
   updateCtx(ch, gm, kw, mode);
   showLoading('Fetching clips…');
+  // Reset progress bar
+  const _bar = document.getElementById('fetchBarFill');
+  const _barWrap = document.getElementById('fetchBar');
+  if (_bar) { _bar.style.width='5%'; _bar.style.background='var(--twitch-purple)'; _bar.style.boxShadow='0 0 8px rgba(145,71,255,.6)'; }
+  if (_barWrap) { _barWrap.style.opacity='1'; _barWrap.style.transition=''; }
 
   try {
     // Resolve IDs
@@ -828,6 +837,9 @@ function buildDateChunks(dateFrom, dateTo) {
   return chunks;
 }
 
+// How many chunks to run in parallel. 3 is a good balance — fast but unlikely to rate-limit.
+const PARALLEL_CHUNKS = 3;
+
 async function startBackgroundFetch() {
   if (bgFetchActive) return;
   bgFetchActive = true;
@@ -835,50 +847,138 @@ async function startBackgroundFetch() {
   const searchId = lastParams.searchId;
   const {dateFrom, dateTo, mode} = lastParams;
 
-  // Build monthly chunks for channel/both/game modes
-  // Keyword mode doesn't benefit from chunking (no single broadcaster cap), keep as-is
   const useChunks = (mode === 'channel' || mode === 'both' || mode === 'game');
   const chunks = lastParams._chunks || (useChunks ? buildDateChunks(dateFrom, dateTo) : [{from: dateFrom, to: dateTo}]);
   const totalChunks = chunks.length;
 
-  // Skip chunk 0 — already fetched in doSearch as the first batch
-  for (let ci = 1; ci < chunks.length; ci++) {
+  // Chunk 0 already fetched in doSearch. Work remaining chunks in parallel batches.
+  const remainingChunks = chunks.slice(1);
+  let completedChunks = 1; // chunk 0 counts as done
+
+  // Process chunks in parallel groups of PARALLEL_CHUNKS
+  for (let i = 0; i < remainingChunks.length; i += PARALLEL_CHUNKS) {
     if (bgFetchStopped || lastParams.searchId !== searchId) break;
 
-    // Set the active window for this chunk and reset cursors
-    lastParams.activeFrom = chunks[ci].from;
-    lastParams.activeTo = chunks[ci].to;
-    twCursors = {};
+    const group = remainingChunks.slice(i, i + PARALLEL_CHUNKS);
 
-    // Drain this chunk fully
-    while (!bgFetchStopped && lastParams.searchId === searchId) {
-      if (isExhausted()) break;
-      try {
-        await fetchBatch();
-        applyFilters();
-        sortClips();
-        renderResults(true);
-        updateFetchProgress(false, ci + 1, totalChunks);
-      } catch(e) {
-        if (e.status === 429 || (e.message && e.message.includes('429'))) {
-          await handleRateLimit(searchId);
-          if (bgFetchStopped || lastParams.searchId !== searchId) break;
-        } else {
-          break;
+    // Run this group in parallel, each chunk fully drained
+    await Promise.all(group.map(async (chunk) => {
+      if (bgFetchStopped || lastParams.searchId !== searchId) return;
+
+      // Each parallel chunk needs its own cursor namespace so they don't collide
+      const chunkKey = `chunk_${chunk.from}`;
+      const chunkCursors = {};
+
+      // Drain this chunk
+      while (!bgFetchStopped && lastParams.searchId === searchId) {
+        // Check exhaustion for this chunk's cursors
+        const exhausted = isChunkExhausted(chunkCursors, mode);
+        if (exhausted) break;
+
+        try {
+          const newClips = await fetchChunk(chunk.from, chunk.to, chunkCursors);
+          if (!newClips.length) break;
+
+          // Merge into global allClips under a lock-like pattern
+          const seenIds = new Set(allClips.map(c => c.id));
+          const fresh = newClips.filter(c => !seenIds.has(c.id));
+          if (fresh.length) {
+            allClips.push(...fresh);
+            applyFilters();
+            sortClips();
+            renderResults(true);
+          }
+        } catch(e) {
+          if (e.status === 429 || (e.message && e.message.includes('429'))) {
+            await handleRateLimit(searchId);
+            if (bgFetchStopped || lastParams.searchId !== searchId) break;
+          } else {
+            break;
+          }
         }
       }
-    }
+
+      completedChunks++;
+      updateFetchProgress(false, completedChunks, totalChunks);
+    }));
+
+    // Re-render and update progress after each parallel group finishes
+    applyFilters();
+    sortClips();
+    renderResults(true);
+    updateFetchProgress(false, completedChunks, totalChunks);
   }
 
-  // Clean up active window
   lastParams.activeFrom = null;
   lastParams.activeTo = null;
-
   bgFetchActive = false;
   hideRateToast();
   updateFetchProgress(true, totalChunks, totalChunks);
   if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
   renderResults(true);
+}
+
+function isChunkExhausted(cursors, mode) {
+  if (mode === 'channel' || mode === 'both') {
+    return lastBroadcasterIds.every(({id}) => cursors[id] === null);
+  }
+  if (mode === 'game') return cursors['game'] === null;
+  if (mode === 'keyword') return (lastParams.keywordCatIds||[]).every(id => cursors[id] === null);
+  return true;
+}
+
+async function fetchChunk(from, to, cursors) {
+  const {mode} = lastParams;
+  let newClips = [];
+
+  if (mode === 'channel' || mode === 'both') {
+    const fetches = lastBroadcasterIds.map(async ({id, name}) => {
+      const cursor = cursors[id] === null ? null : cursors[id];
+      if (cursor === null) return [];
+      let url = `https://api.twitch.tv/helix/clips?broadcaster_id=${id}&first=100`;
+      url += `&started_at=${from}&ended_at=${to}`;
+      if (cursor) url += `&after=${cursor}`;
+      const data = await twGet(url);
+      cursors[id] = data.pagination?.cursor || null;
+      return (data.data||[]).map(c=>({...c,_channelName:name}));
+    });
+    const batches = await Promise.all(fetches);
+    newClips = batches.flat();
+  } else if (mode === 'game') {
+    const cursor = cursors['game'] === null ? null : cursors['game'];
+    if (cursor === null) return [];
+    let url = `https://api.twitch.tv/helix/clips?game_id=${lastGameId}&first=100`;
+    url += `&started_at=${from}&ended_at=${to}`;
+    if (cursor) url += `&after=${cursor}`;
+    const data = await twGet(url);
+    cursors['game'] = data.pagination?.cursor || null;
+    newClips = data.data || [];
+  } else if (mode === 'keyword') {
+    const catIds = lastParams.keywordCatIds || [];
+    const fetches = catIds.map(async (catId) => {
+      const cursor = cursors[catId] === null ? null : cursors[catId];
+      if (cursor === null) return [];
+      let url = `https://api.twitch.tv/helix/clips?game_id=${catId}&first=20`;
+      url += `&started_at=${from}&ended_at=${to}`;
+      if (cursor) url += `&after=${cursor}`;
+      try {
+        const data = await twGet(url);
+        cursors[catId] = data.pagination?.cursor || null;
+        return data.data || [];
+      } catch(e) { return []; }
+    });
+    const batches = await Promise.all(fetches);
+    newClips = batches.flat();
+  }
+
+  if (!newClips.length) return [];
+
+  const knownGameIds = new Set(allClips.map(c=>c.game_id));
+  const newGameIds = [...new Set(newClips.map(c=>c.game_id).filter(id=>id&&!knownGameIds.has(id)))];
+  const gmap = await fetchGameNames(newGameIds);
+  newClips.forEach(c => { c._gameName = gmap[c.game_id] || (c.game_id?'Unknown':'N/A'); });
+
+  return newClips;
 }
 
 async function handleRateLimit(searchId) {
@@ -990,6 +1090,32 @@ function sortClips() {
 
 function updateFetchProgress(done, currentChunk, totalChunks) {
   const el = document.getElementById('fetchProgress');
+  const bar = document.getElementById('fetchBarFill');
+
+  // Update progress bar
+  if (bar) {
+    if (done) {
+      bar.style.width = '100%';
+      bar.style.background = 'var(--twitch-success)';
+      bar.style.boxShadow = '0 0 8px rgba(0,200,160,.5)';
+      setTimeout(() => {
+        const barWrap = document.getElementById('fetchBar');
+        if (barWrap) barWrap.style.opacity = '0';
+        barWrap.style.transition = 'opacity .6s';
+      }, 800);
+    } else if (totalChunks && totalChunks > 1) {
+      const pct = Math.round((currentChunk / totalChunks) * 100);
+      bar.style.width = pct + '%';
+      bar.style.background = 'var(--twitch-purple)';
+      bar.style.boxShadow = '0 0 8px rgba(145,71,255,.6)';
+      const barWrap = document.getElementById('fetchBar');
+      if (barWrap) { barWrap.style.opacity = '1'; barWrap.style.transition = ''; }
+    } else {
+      bar.style.width = '30%';
+    }
+  }
+
+  // Update text counter
   if (!el) return;
   if (done) {
     el.textContent = `✓ ${allClips.length.toLocaleString()} clips loaded`;
@@ -1151,7 +1277,7 @@ function renderResults(keepPage) {
         </div>
       </div>
     </div>
-    <div class="clips-grid">${page.map(c=>renderCard(c,mode)).join('')}</div>
+    <div class="clips-grid">${page.map((c,i)=>renderCard(c,mode,i)).join('')}</div>
     ${pages>1?`<div class="pagination">
       <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Previous</button>
       <span class="page-info">Page ${currentPage} of ${pages}</span>
@@ -1159,7 +1285,7 @@ function renderResults(keepPage) {
     </div>`:''}`;
 }
 
-function renderCard(c, mode) {
+function renderCard(c, mode, idx) {
   const date=new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const views=c.view_count>=1000?`${(c.view_count/1000).toFixed(1)}k`:c.view_count;
   const dur=c.duration?`${Math.round(c.duration)}s`:'';
@@ -1180,7 +1306,8 @@ function renderCard(c, mode) {
     ?`<span style="color:var(--twitch-warning);font-weight:700" title="Views per day">⚡ ${vpdStr}/day</span>`
     :'';
 
-  return `<div class="clip-card">
+  const delay = Math.min(idx * 30, 300);
+  return `<div class="clip-card" style="animation-delay:${delay}ms">
     <div class="clip-thumb" onclick="openClip('${id}','${url}','${encodeURIComponent(c.title)}','${encodeURIComponent(subText)}','${url}','${vodEnc}')">
       <img src="${c.thumbnail_url||''}" alt="${t}" loading="lazy" onerror="this.style.opacity=0">
       <div class="thumb-overlay"><div class="play-circle"><svg width="13" height="15" viewBox="0 0 14 16" fill="white"><path d="M0 0l14 8-14 8z"/></svg></div></div>

@@ -583,7 +583,7 @@ async function saveAndConnect() {
 async function getToken(id, secret) {
   // CORS proxy: replace YOUR_WORKER_URL with your Cloudflare Worker URL
   // e.g. https://clipfinder-cors.yourname.workers.dev
-  const CORS_PROXY = 'clipfinder-cors.juliangese.workers.dev';
+  const CORS_PROXY = 'https://clipfinder-cors.juliangese.workers.dev';
   const r = await fetch(CORS_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

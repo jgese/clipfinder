@@ -755,13 +755,20 @@ async function doSearch() {
       lastParams.keywordCatIds = catIds;
     }
 
+    // Set first chunk window (month 1 of the date range)
+    const _chunks = (lastParams.mode === 'channel' || lastParams.mode === 'both' || lastParams.mode === 'game')
+      ? buildDateChunks(dateFrom, dateTo) : [{from: dateFrom, to: dateTo}];
+    lastParams._chunks = _chunks;
+    lastParams.activeFrom = _chunks[0].from;
+    lastParams.activeTo = _chunks[0].to;
+
     // First batch — render immediately so user sees results right away
     await fetchBatch();
     applyFilters();
     sortClips();
     if (mode === 'channel' || mode === 'both') buildCats();
     renderResults(false);
-    updateFetchProgress(false);
+    updateFetchProgress(false, 1, 1);
 
     // Background fetch — continues silently, re-sorting as new clips arrive
     startBackgroundFetch();
@@ -801,35 +808,75 @@ function stopBackgroundFetch() {
   hideRateToast();
 }
 
+// Build an array of monthly {from, to} chunks covering the full date range
+function buildDateChunks(dateFrom, dateTo) {
+  const chunks = [];
+  let cursor = new Date(dateFrom);
+  const end = new Date(dateTo);
+  end.setHours(23, 59, 59, 999);
+  while (cursor <= end) {
+    const chunkStart = new Date(cursor);
+    // End of this chunk = last ms of the same month
+    const chunkEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59, 999);
+    chunks.push({
+      from: chunkStart.toISOString(),
+      to: (chunkEnd < end ? chunkEnd : end).toISOString()
+    });
+    // Advance to first day of next month
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return chunks;
+}
+
 async function startBackgroundFetch() {
   if (bgFetchActive) return;
   bgFetchActive = true;
   bgFetchStopped = false;
   const searchId = lastParams.searchId;
+  const {dateFrom, dateTo, mode} = lastParams;
 
-  while (!bgFetchStopped) {
-    if (lastParams.searchId !== searchId) break;
-    if (isExhausted()) break;
+  // Build monthly chunks for channel/both/game modes
+  // Keyword mode doesn't benefit from chunking (no single broadcaster cap), keep as-is
+  const useChunks = (mode === 'channel' || mode === 'both' || mode === 'game');
+  const chunks = lastParams._chunks || (useChunks ? buildDateChunks(dateFrom, dateTo) : [{from: dateFrom, to: dateTo}]);
+  const totalChunks = chunks.length;
 
-    try {
-      await fetchBatch();
-      applyFilters();
-      sortClips();
-      renderResults(true);
-      updateFetchProgress(false);
-    } catch(e) {
-      if (e.status === 429 || (e.message && e.message.includes('429'))) {
-        await handleRateLimit(searchId);
-        if (bgFetchStopped || lastParams.searchId !== searchId) break;
-      } else {
-        break;
+  // Skip chunk 0 — already fetched in doSearch as the first batch
+  for (let ci = 1; ci < chunks.length; ci++) {
+    if (bgFetchStopped || lastParams.searchId !== searchId) break;
+
+    // Set the active window for this chunk and reset cursors
+    lastParams.activeFrom = chunks[ci].from;
+    lastParams.activeTo = chunks[ci].to;
+    twCursors = {};
+
+    // Drain this chunk fully
+    while (!bgFetchStopped && lastParams.searchId === searchId) {
+      if (isExhausted()) break;
+      try {
+        await fetchBatch();
+        applyFilters();
+        sortClips();
+        renderResults(true);
+        updateFetchProgress(false, ci + 1, totalChunks);
+      } catch(e) {
+        if (e.status === 429 || (e.message && e.message.includes('429'))) {
+          await handleRateLimit(searchId);
+          if (bgFetchStopped || lastParams.searchId !== searchId) break;
+        } else {
+          break;
+        }
       }
     }
   }
 
+  // Clean up active window
+  lastParams.activeFrom = null;
+  lastParams.activeTo = null;
+
   bgFetchActive = false;
   hideRateToast();
-  updateFetchProgress(true);
+  updateFetchProgress(true, totalChunks, totalChunks);
   if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
   renderResults(true);
 }
@@ -864,7 +911,10 @@ function isExhausted() {
 }
 
 async function fetchBatch() {
-  const {mode, dateFrom, dateTo} = lastParams;
+  const {mode, dateFrom, dateTo, activeFrom, activeTo} = lastParams;
+  // Use the active chunk window if set (background chunked fetch), else full range (first batch)
+  const from = activeFrom || dateFrom;
+  const to = activeTo || dateTo;
   let newClips = [];
 
   if (mode === 'channel' || mode === 'both') {
@@ -872,8 +922,8 @@ async function fetchBatch() {
       const cursor = twCursors[id] === null ? null : twCursors[id];
       if (cursor === null) return [];
       let url = `https://api.twitch.tv/helix/clips?broadcaster_id=${id}&first=100`;
-      if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
-      if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
+      if (from) url += `&started_at=${from}`;
+      if (to) url += `&ended_at=${to}`;
       if (cursor) url += `&after=${cursor}`;
       const data = await twGet(url);
       twCursors[id] = data.pagination?.cursor || null;
@@ -886,8 +936,8 @@ async function fetchBatch() {
     const cursor = twCursors['game'] === null ? null : twCursors['game'];
     if (cursor === null) return;
     let url = `https://api.twitch.tv/helix/clips?game_id=${lastGameId}&first=100`;
-    if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
-    if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
+    if (from) url += `&started_at=${from}`;
+    if (to) url += `&ended_at=${to}`;
     if (cursor) url += `&after=${cursor}`;
     const data = await twGet(url);
     twCursors['game'] = data.pagination?.cursor || null;
@@ -898,8 +948,8 @@ async function fetchBatch() {
       const cursor = twCursors[catId] === null ? null : twCursors[catId];
       if (cursor === null) return [];
       let url = `https://api.twitch.tv/helix/clips?game_id=${catId}&first=20`;
-      if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
-      if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
+      if (from) url += `&started_at=${from}`;
+      if (to) url += `&ended_at=${to}`;
       if (cursor) url += `&after=${cursor}`;
       try {
         const data = await twGet(url);
@@ -913,8 +963,13 @@ async function fetchBatch() {
 
   if (!newClips.length) return;
 
-  const knownIds = new Set(allClips.map(c=>c.game_id));
-  const newIds = [...new Set(newClips.map(c=>c.game_id).filter(id=>id&&!knownIds.has(id)))];
+  // Deduplicate by clip id (chunks can overlap at boundaries)
+  const seenIds = new Set(allClips.map(c=>c.id));
+  newClips = newClips.filter(c => !seenIds.has(c.id));
+  if (!newClips.length) return;
+
+  const knownGameIds = new Set(allClips.map(c=>c.game_id));
+  const newIds = [...new Set(newClips.map(c=>c.game_id).filter(id=>id&&!knownGameIds.has(id)))];
   const gmap = await fetchGameNames(newIds);
   newClips.forEach(c => { c._gameName = gmap[c.game_id] || (c.game_id?'Unknown':'N/A'); });
   allClips.push(...newClips);
@@ -933,12 +988,15 @@ function sortClips() {
   }
 }
 
-function updateFetchProgress(done) {
+function updateFetchProgress(done, currentChunk, totalChunks) {
   const el = document.getElementById('fetchProgress');
   if (!el) return;
   if (done) {
     el.textContent = `✓ ${allClips.length.toLocaleString()} clips loaded`;
     el.style.color = 'var(--twitch-success)';
+  } else if (totalChunks && totalChunks > 1) {
+    el.textContent = `Loading… month ${currentChunk} of ${totalChunks} · ${allClips.length.toLocaleString()} clips`;
+    el.style.color = 'var(--twitch-text-muted)';
   } else {
     el.textContent = `Loading… ${allClips.length.toLocaleString()} clips`;
     el.style.color = 'var(--twitch-text-muted)';

@@ -552,6 +552,8 @@ let setupOpen = true;
   document.getElementById('fFrom').value = fmtDate(past);
   try {
     setDefaultDates();
+  // Capture the initial landing state so resetToHome can restore it exactly
+  window._initialResultsHTML = document.getElementById('resultsArea').innerHTML;
   const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (s?.id && s?.secret) {
       document.getElementById('cfgId').value = s.id;
@@ -565,13 +567,30 @@ function fmtDate(d) { return d.toISOString().split('T')[0]; }
 function markFilled(el) { el.classList.toggle('filled', el.value.trim().length > 0); }
 
 function resetToHome() {
-  clearAll();
+  // Stop any background fetch
+  bgFetchStopped = true;
+  hideRateToast();
+
+  // Reset all state
+  allClips=[]; filteredClips=[]; twCursors={}; lastBroadcasterIds=[]; lastGameId=null;
+  currentPage=1; allCats=[]; excludedCats=new Set(); featuredOnly=false;
+  sortMode='date'; sortDir='desc'; lastParams={};
+
+  // Reset sidebar UI
   ['fChannel','fGame','fKeyword'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){el.value='';el.classList.remove('filled');}
   });
-  setDefaultDates();
+  document.getElementById('excludeSection').className='sidebar-section exclude-section';
+  document.getElementById('btnClear').style.display='none';
+  document.getElementById('btnFeatured').className='tw-btn-toggle';
+  document.getElementById('btnFeatured').textContent='⭐ Featured Only';
   document.getElementById('searchCtx').className='search-ctx';
+
+  // Restore exact initial landing state
+  document.getElementById('resultsArea').innerHTML = window._initialResultsHTML;
+
+  setDefaultDates();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 

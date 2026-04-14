@@ -335,6 +335,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .modal-link.vod:hover { border-color: var(--twitch-warning); color: var(--twitch-warning); }
 .modal-close-btn { background: transparent; border: none; color: var(--twitch-text-muted); font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: var(--radius-sm); transition: background .1s, color .1s; }
 .modal-close-btn:hover { background: var(--twitch-surface3); color: var(--twitch-text); }
+.modal-copy-btn { background: var(--twitch-surface2); border: 1px solid var(--twitch-border2); color: var(--twitch-text-dim); padding: 7px 12px; border-radius: var(--radius-md); font-size: 12px; font-family: var(--font); font-weight: 600; cursor: pointer; transition: all .1s; display: inline-flex; align-items: center; gap: 5px; }
+.modal-copy-btn:hover { border-color: var(--twitch-purple); color: var(--twitch-purple); }
+.modal-copy-btn.copied { border-color: var(--twitch-success); color: var(--twitch-success); }
 
 /* ── STATES ───────────────────────────────────── */
 .state-container { text-align: center; padding: 72px 24px; }
@@ -503,6 +506,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
       <div class="modal-actions">
         <a class="modal-link vod" id="mVodLink" href="#" target="_blank" style="display:none">📺 Watch VOD</a>
         <a class="modal-link" id="mTwitchLink" href="#" target="_blank">↗ Twitch</a>
+        <button class="modal-copy-btn" id="mCopyBtn" onclick="copyClipUrl()">📋 Copy URL</button>
         <button class="modal-close-btn" onclick="closeModal()">✕</button>
       </div>
     </div>
@@ -581,10 +585,7 @@ async function saveAndConnect() {
 }
 
 async function getToken(id, secret) {
-  // CORS proxy: replace YOUR_WORKER_URL with your Cloudflare Worker URL
-  // e.g. https://clipfinder-cors.yourname.workers.dev
-  const CORS_PROXY = 'https://clipfinder-cors.juliangese.workers.dev';
-  const r = await fetch(CORS_PROXY, {
+  const r = await fetch('https://clipfinder-cors.juliangese.workers.dev', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `client_id=${encodeURIComponent(id)}&client_secret=${encodeURIComponent(secret)}&grant_type=client_credentials`,
@@ -1031,6 +1032,15 @@ function closeModal(){
   document.getElementById('modalBackdrop').className='modal-backdrop';
   document.getElementById('modalPlayer').innerHTML='';
   document.body.style.overflow='';
+}
+function copyClipUrl(){
+  const url=document.getElementById('mTwitchLink').href;
+  navigator.clipboard.writeText(url).then(()=>{
+    const btn=document.getElementById('mCopyBtn');
+    btn.textContent='✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='📋 Copy URL';btn.classList.remove('copied');},2000);
+  });
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 

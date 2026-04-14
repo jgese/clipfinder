@@ -1119,7 +1119,7 @@ function renderCard(c, mode) {
   </div>`;
 }
 
-function goPage(p) { currentPage=p; renderResults(); window.scrollTo({top:0,behavior:'smooth'}); }
+function goPage(p) { currentPage=p; renderResults(true); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function clearAll() {
   bgFetchStopped = true;

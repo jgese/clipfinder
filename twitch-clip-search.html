@@ -569,38 +569,7 @@ function fmtDate(d) { return d.toISOString().split('T')[0]; }
 function markFilled(el) { el.classList.toggle('filled', el.value.trim().length > 0); }
 
 function resetToHome() {
-  // Stop any background fetch
-  bgFetchStopped = true;
-  hideRateToast();
-
-  // Reset all state
-  allClips=[]; filteredClips=[]; twCursors={}; lastBroadcasterIds=[]; lastGameId=null;
-  currentPage=1; allCats=[]; excludedCats=new Set(); featuredOnly=false;
-  sortMode='date'; sortDir='desc'; lastParams={};
-
-  // Reset sidebar UI
-  ['fChannel','fGame','fKeyword'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el){el.value='';el.classList.remove('filled');}
-  });
-  document.getElementById('excludeSection').className='sidebar-section exclude-section';
-  document.getElementById('btnClear').style.display='none';
-  document.getElementById('btnFeatured').className='tw-btn-toggle';
-  document.getElementById('btnFeatured').textContent='⭐ Featured Only';
-  document.getElementById('searchCtx').className='search-ctx';
-
-  // Restore landing state
-  showLandingState();
-
-  // Hide and reset progress bar
-  const barFill = document.getElementById('fetchBarFill');
-  const barWrap = document.getElementById('fetchBar');
-  if (barFill) { barFill.style.width='0%'; barFill.style.background='var(--twitch-purple)'; }
-  if (barWrap) { barWrap.style.opacity='0'; }
-
-  setDefaultDates();
-  checkSearchReady();
-  window.scrollTo({top:0,behavior:'smooth'});
+  window.location.reload();
 }
 
 function setDefaultDates() {
@@ -887,7 +856,7 @@ async function startBackgroundFetch() {
           // Merge into global allClips under a lock-like pattern
           const seenIds = new Set(allClips.map(c => c.id));
           const fresh = newClips.filter(c => !seenIds.has(c.id));
-          if (fresh.length) {
+          if (fresh.length && !bgFetchStopped && lastParams.searchId === searchId) {
             allClips.push(...fresh);
             applyFilters();
             sortClips();
@@ -904,23 +873,31 @@ async function startBackgroundFetch() {
       }
 
       completedChunks++;
-      updateFetchProgress(false, completedChunks, totalChunks);
+      if (!bgFetchStopped && lastParams.searchId === searchId) {
+        updateFetchProgress(false, completedChunks, totalChunks);
+      }
     }));
 
-    // Re-render and update progress after each parallel group finishes
-    applyFilters();
-    sortClips();
-    updateResultsInPlace();
-    updateFetchProgress(false, completedChunks, totalChunks);
+    // Re-render after each parallel group — only if still on this search
+    if (!bgFetchStopped && lastParams.searchId === searchId) {
+      applyFilters();
+      sortClips();
+      updateResultsInPlace();
+      updateFetchProgress(false, completedChunks, totalChunks);
+    }
   }
 
   lastParams.activeFrom = null;
   lastParams.activeTo = null;
   bgFetchActive = false;
   hideRateToast();
-  updateFetchProgress(true, totalChunks, totalChunks);
-  if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
-  updateResultsInPlace();
+
+  // Only do final render if we weren't stopped mid-way
+  if (!bgFetchStopped && lastParams.searchId === searchId) {
+    updateFetchProgress(true, totalChunks, totalChunks);
+    if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
+    updateResultsInPlace();
+  }
 }
 
 function isChunkExhausted(cursors, mode) {

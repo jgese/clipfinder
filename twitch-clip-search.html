@@ -339,6 +339,15 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .modal-copy-btn:hover { border-color: var(--twitch-purple); color: var(--twitch-purple); }
 .modal-copy-btn.copied { border-color: var(--twitch-success); color: var(--twitch-success); }
 
+/* Rate limit toast */
+.rate-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--twitch-surface2); border: 1px solid var(--twitch-warning); border-radius: var(--radius-lg); padding: 14px 18px; display: flex; align-items: center; gap: 14px; z-index: 300; box-shadow: 0 4px 24px rgba(0,0,0,.5); min-width: 340px; max-width: 480px; }
+.rate-toast-icon { font-size: 20px; flex-shrink: 0; }
+.rate-toast-body { flex: 1; }
+.rate-toast-title { font-size: 13px; font-weight: 700; color: var(--twitch-warning); }
+.rate-toast-sub { font-size: 12px; color: var(--twitch-text-dim); margin-top: 2px; }
+.rate-toast-stop { background: transparent; border: 1px solid var(--twitch-border2); color: var(--twitch-text-dim); font-family: var(--font); font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: var(--radius-md); cursor: pointer; white-space: nowrap; transition: all .1s; flex-shrink: 0; }
+.rate-toast-stop:hover { border-color: var(--twitch-error); color: var(--twitch-error); }
+
 /* ── STATES ───────────────────────────────────── */
 .state-container { text-align: center; padding: 72px 24px; }
 .state-icon { font-size: 44px; margin-bottom: 14px; opacity: 1; }
@@ -398,11 +407,11 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;overflow:hidden;width:100%;">
         <div class="field">
           <label class="tw-label" style="color:var(--twitch-text-dim);">From</label>
-          <input class="tw-input date-input" type="date" id="fFrom">
+          <input class="tw-input date-input" type="date" id="fFrom" onchange="checkSearchReady()">
         </div>
         <div class="field">
           <label class="tw-label" style="color:var(--twitch-text-dim);">To</label>
-          <input class="tw-input date-input" type="date" id="fTo">
+          <input class="tw-input date-input" type="date" id="fTo" onchange="checkSearchReady()">
         </div>
       </div>
       <div class="field">
@@ -513,6 +522,16 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   </div>
 </div>
 
+<!-- RATE LIMIT TOAST -->
+<div class="rate-toast" id="rateToast" style="display:none">
+  <div class="rate-toast-icon">⏳</div>
+  <div class="rate-toast-body">
+    <div class="rate-toast-title">Rate limit hit — resuming in <span id="rateCountdown">60</span>s</div>
+    <div class="rate-toast-sub">Twitch API limit reached. Fetching will continue automatically.</div>
+  </div>
+  <button class="rate-toast-stop" onclick="stopBackgroundFetch()">Stop — I have enough</button>
+</div>
+
 <script>
 const STORAGE_KEY = 'clipfinder_v2';
 const TOP_CATEGORIES = [
@@ -601,8 +620,8 @@ function markConnected(id) {
   document.getElementById('btnConnect').textContent = 'Reconnect';
   document.getElementById('setupBadge').className = 'badge badge-success';
   document.getElementById('setupBadge').textContent = 'Connected';
-  document.getElementById('btnSearch').disabled = false;
   setStatus(true, 'Connected');
+  checkSearchReady();
   if (setupOpen) toggleSetup();
 }
 
@@ -649,20 +668,26 @@ async function doSearch() {
   const ch = document.getElementById('fChannel').value.trim();
   const gm = document.getElementById('fGame').value.trim();
   const kw = document.getElementById('fKeyword').value.trim().toLowerCase();
-  const mode = getMode(ch, gm, kw);
-  if (!mode) { showErr('searchError', 'Enter at least a channel, category, or keyword.'); return; }
-  hideErr('searchError');
-
-  perPage = parseInt(document.getElementById('fPageSize').value);
   const dateFrom = document.getElementById('fFrom').value;
   const dateTo = document.getElementById('fTo').value;
 
+  const mode = getMode(ch, gm, kw);
+  if (!mode) { showErr('searchError', 'Enter at least a channel, category, or keyword.'); return; }
+  if (!dateFrom || !dateTo) { showErr('searchError', 'Both From and To dates are required.'); return; }
+  if (new Date(dateFrom) > new Date(dateTo)) { showErr('searchError', 'From date must be before To date.'); return; }
+  hideErr('searchError');
+
+  // Stop any running background fetch from a previous search
+  bgFetchStopped = true;
+  await new Promise(r => setTimeout(r, 50));
+
+  perPage = parseInt(document.getElementById('fPageSize').value);
   allClips = []; filteredClips = [];
   twCursors = {}; lastBroadcasterIds = []; lastGameId = null;
   currentPage = 1; sortMode = 'date'; sortDir = 'desc';
   allCats = []; excludedCats = new Set();
   document.getElementById('excludeSection').className = 'sidebar-section exclude-section';
-  lastParams = {ch, gm, kw, dateFrom, dateTo, mode};
+  lastParams = {ch, gm, kw, dateFrom, dateTo, mode, searchId: Date.now()};
   document.getElementById('btnClear').style.display = '';
   updateCtx(ch, gm, kw, mode);
   showLoading('Fetching clips…');
@@ -693,7 +718,6 @@ async function doSearch() {
     }
 
     if (mode === 'keyword') {
-      // Resolve top categories to search across
       const catNames = TOP_CATEGORIES.slice(0, 10);
       const results = await Promise.all(
         catNames.map(name => twGet(`https://api.twitch.tv/helix/games?name=${encodeURIComponent(name)}`).catch(()=>null))
@@ -702,9 +726,17 @@ async function doSearch() {
       lastParams.keywordCatIds = catIds;
     }
 
-    await fetchEnough(perPage * 2);
+    // First batch — render immediately so user sees results right away
+    await fetchBatch();
+    applyFilters();
+    sortClips();
     if (mode === 'channel' || mode === 'both') buildCats();
-    applyFilters(); renderResults();
+    renderResults(false);
+    updateFetchProgress(false);
+
+    // Background fetch — continues silently, re-sorting as new clips arrive
+    startBackgroundFetch();
+
   } catch(e) {
     showErr('searchError', e.message || 'Something went wrong.');
     document.getElementById('resultsArea').innerHTML = '';
@@ -727,86 +759,173 @@ function updateCtx(ch, gm, kw, mode) {
 }
 
 async function fetchEnough(target) {
-  const {mode, dateFrom, dateTo, kw} = lastParams;
-  let attempts = 0;
-  const maxAttempts = mode === 'keyword' ? 5 : 20;
+  // Initial fetch — gets first batch so results appear immediately
+  await fetchBatch();
+}
 
-  while (filteredClips.length < target && attempts < maxAttempts) {
-    attempts++;
-    let newClips = [];
+// ── BACKGROUND FETCHING ───────────────────────
+let bgFetchActive = false;
+let bgFetchStopped = false;
 
-    if (mode === 'channel' || mode === 'both') {
-      // Fetch from each channel in parallel
-      const fetches = lastBroadcasterIds.map(async ({id, name}) => {
-        const cursor = twCursors[id] === null ? null : twCursors[id];
-        if (cursor === null) return []; // exhausted
-        let url = `https://api.twitch.tv/helix/clips?broadcaster_id=${id}&first=100`;
-        if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
-        if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
-        if (cursor) url += `&after=${cursor}`;
-        const data = await twGet(url);
-        twCursors[id] = data.pagination?.cursor || null;
-        return (data.data||[]).map(c=>({...c,_channelName:name}));
-      });
-      const batches = await Promise.all(fetches);
-      newClips = batches.flat();
-      // Sort merged results by date desc
-      newClips.sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
-    } else if (mode === 'game') {
-      const cursor = twCursors['game'] === null ? null : twCursors['game'];
-      if (cursor === null) break;
-      let url = `https://api.twitch.tv/helix/clips?game_id=${lastGameId}&first=100`;
+function stopBackgroundFetch() {
+  bgFetchStopped = true;
+  hideRateToast();
+}
+
+async function startBackgroundFetch() {
+  if (bgFetchActive) return;
+  bgFetchActive = true;
+  bgFetchStopped = false;
+  const searchId = lastParams.searchId;
+
+  while (!bgFetchStopped) {
+    if (lastParams.searchId !== searchId) break;
+    if (isExhausted()) break;
+
+    try {
+      await fetchBatch();
+      applyFilters();
+      sortClips();
+      renderResults(true);
+      updateFetchProgress(false);
+    } catch(e) {
+      if (e.status === 429 || (e.message && e.message.includes('429'))) {
+        await handleRateLimit(searchId);
+        if (bgFetchStopped || lastParams.searchId !== searchId) break;
+      } else {
+        break;
+      }
+    }
+  }
+
+  bgFetchActive = false;
+  hideRateToast();
+  updateFetchProgress(true);
+  if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
+  renderResults(true);
+}
+
+async function handleRateLimit(searchId) {
+  let secs = 61;
+  const toast = document.getElementById('rateToast');
+  const countdown = document.getElementById('rateCountdown');
+  toast.style.display = 'flex';
+  return new Promise(resolve => {
+    const tick = setInterval(() => {
+      if (bgFetchStopped || lastParams.searchId !== searchId) {
+        clearInterval(tick); hideRateToast(); resolve(); return;
+      }
+      secs--;
+      countdown.textContent = secs;
+      if (secs <= 0) { clearInterval(tick); hideRateToast(); resolve(); }
+    }, 1000);
+  });
+}
+
+function hideRateToast() {
+  document.getElementById('rateToast').style.display = 'none';
+}
+
+function isExhausted() {
+  const {mode} = lastParams;
+  if (mode === 'channel' || mode === 'both') return lastBroadcasterIds.every(({id}) => twCursors[id] === null);
+  if (mode === 'game') return twCursors['game'] === null;
+  if (mode === 'keyword') return (lastParams.keywordCatIds||[]).every(id => twCursors[id] === null);
+  return true;
+}
+
+async function fetchBatch() {
+  const {mode, dateFrom, dateTo} = lastParams;
+  let newClips = [];
+
+  if (mode === 'channel' || mode === 'both') {
+    const fetches = lastBroadcasterIds.map(async ({id, name}) => {
+      const cursor = twCursors[id] === null ? null : twCursors[id];
+      if (cursor === null) return [];
+      let url = `https://api.twitch.tv/helix/clips?broadcaster_id=${id}&first=100`;
       if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
       if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
       if (cursor) url += `&after=${cursor}`;
       const data = await twGet(url);
-      twCursors['game'] = data.pagination?.cursor || null;
-      newClips = data.data || [];
-    } else if (mode === 'keyword') {
-      // Fetch from multiple top categories in parallel
-      const catIds = lastParams.keywordCatIds || [];
-      const fetches = catIds.map(async (catId) => {
-        const cursor = twCursors[catId] === null ? null : twCursors[catId];
-        if (cursor === null) return [];
-        let url = `https://api.twitch.tv/helix/clips?game_id=${catId}&first=20`;
-        if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
-        if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
-        if (cursor) url += `&after=${cursor}`;
-        try {
-          const data = await twGet(url);
-          twCursors[catId] = data.pagination?.cursor || null;
-          return data.data || [];
-        } catch(e) { return []; }
-      });
-      const batches = await Promise.all(fetches);
-      newClips = batches.flat();
-    }
-
-    if (!newClips.length) break;
-
-    // Resolve game names
-    const knownIds = new Set(allClips.map(c=>c.game_id));
-    const newIds = [...new Set(newClips.map(c=>c.game_id).filter(id=>id&&!knownIds.has(id)))];
-    const gmap = await fetchGameNames(newIds);
-    newClips.forEach(c => { c._gameName = gmap[c.game_id] || (c.game_id?'Unknown':'N/A'); });
-
-    allClips.push(...newClips);
-
-    newClips.forEach(c => {
-      if (mode==='both' && c.game_id!==lastGameId) return;
-      if (kw && !c.title.toLowerCase().includes(kw)) return;
-      if (excludedCats.has(c.game_id)) return;
-      if (featuredOnly && !c.is_featured) return;
-      filteredClips.push(c);
+      twCursors[id] = data.pagination?.cursor || null;
+      return (data.data||[]).map(c=>({...c,_channelName:name}));
     });
+    const batches = await Promise.all(fetches);
+    newClips = batches.flat();
+    newClips.sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
+  } else if (mode === 'game') {
+    const cursor = twCursors['game'] === null ? null : twCursors['game'];
+    if (cursor === null) return;
+    let url = `https://api.twitch.tv/helix/clips?game_id=${lastGameId}&first=100`;
+    if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
+    if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
+    if (cursor) url += `&after=${cursor}`;
+    const data = await twGet(url);
+    twCursors['game'] = data.pagination?.cursor || null;
+    newClips = data.data || [];
+  } else if (mode === 'keyword') {
+    const catIds = lastParams.keywordCatIds || [];
+    const fetches = catIds.map(async (catId) => {
+      const cursor = twCursors[catId] === null ? null : twCursors[catId];
+      if (cursor === null) return [];
+      let url = `https://api.twitch.tv/helix/clips?game_id=${catId}&first=20`;
+      if (dateFrom) url += `&started_at=${new Date(dateFrom).toISOString()}`;
+      if (dateTo) { const e=new Date(dateTo); e.setHours(23,59,59,999); url+=`&ended_at=${e.toISOString()}`; }
+      if (cursor) url += `&after=${cursor}`;
+      try {
+        const data = await twGet(url);
+        twCursors[catId] = data.pagination?.cursor || null;
+        return data.data || [];
+      } catch(e) { return []; }
+    });
+    const batches = await Promise.all(fetches);
+    newClips = batches.flat();
+  }
 
-    // Check if all sources exhausted
-    const allExhausted = mode==='channel'
-      ? lastBroadcasterIds.every(({id})=>twCursors[id]===null)
-      : mode==='game'
-        ? twCursors['game']===null
-        : (lastParams.keywordCatIds||[]).every(id=>twCursors[id]===null);
-    if (allExhausted) break;
+  if (!newClips.length) return;
+
+  const knownIds = new Set(allClips.map(c=>c.game_id));
+  const newIds = [...new Set(newClips.map(c=>c.game_id).filter(id=>id&&!knownIds.has(id)))];
+  const gmap = await fetchGameNames(newIds);
+  newClips.forEach(c => { c._gameName = gmap[c.game_id] || (c.game_id?'Unknown':'N/A'); });
+  allClips.push(...newClips);
+}
+
+function sortClips() {
+  if (sortMode === 'date') {
+    filteredClips.sort((a,b) => sortDir==='desc'
+      ? new Date(b.created_at)-new Date(a.created_at)
+      : new Date(a.created_at)-new Date(b.created_at));
+  } else if (sortMode === 'views') {
+    filteredClips.sort((a,b) => sortDir==='desc' ? b.view_count-a.view_count : a.view_count-b.view_count);
+  } else if (sortMode === 'velocity') {
+    const vpd = c => c.view_count / Math.max(1,(Date.now()-new Date(c.created_at))/86400000);
+    filteredClips.sort((a,b) => sortDir==='desc' ? vpd(b)-vpd(a) : vpd(a)-vpd(b));
+  }
+}
+
+function updateFetchProgress(done) {
+  const el = document.getElementById('fetchProgress');
+  if (!el) return;
+  if (done) {
+    el.textContent = `✓ ${allClips.length.toLocaleString()} clips loaded`;
+    el.style.color = 'var(--twitch-success)';
+  } else {
+    el.textContent = `Loading… ${allClips.length.toLocaleString()} clips`;
+    el.style.color = 'var(--twitch-text-muted)';
+  }
+}
+
+// ── DATE RANGE VALIDATION ─────────────────────
+function checkSearchReady() {
+  const from = document.getElementById('fFrom').value;
+  const to = document.getElementById('fTo').value;
+  const connected = !!token;
+  document.getElementById('btnSearch').disabled = !(connected && from && to);
+  if (from && to && new Date(from) > new Date(to)) {
+    showErr('searchError', 'From date must be before To date.');
+  } else {
+    hideErr('searchError');
   }
 }
 
@@ -906,9 +1025,10 @@ function makeVodUrl(c) {
 }
 
 // ── RENDER ────────────────────────────────────
-function renderResults() {
+function renderResults(keepPage) {
   const total=filteredClips.length;
   const pages=Math.max(1,Math.ceil(total/perPage));
+  if (!keepPage) currentPage=1;
   if (currentPage>pages) currentPage=pages;
   const start=(currentPage-1)*perPage;
   const page=filteredClips.slice(start,start+perPage);
@@ -922,7 +1042,10 @@ function renderResults() {
 
   document.getElementById('resultsArea').innerHTML=`
     <div class="results-bar">
-      <div class="results-count">Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="results-count">Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips</div>
+        <span id="fetchProgress" style="font-size:11px;font-weight:600;"></span>
+      </div>
       <div class="sort-group">
         <span class="sort-label">Sort</span>
         <div class="sort-btns">
@@ -999,6 +1122,8 @@ function renderCard(c, mode) {
 function goPage(p) { currentPage=p; renderResults(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function clearAll() {
+  bgFetchStopped = true;
+  hideRateToast();
   allClips=[]; filteredClips=[]; twCursors={}; lastBroadcasterIds=[]; lastGameId=null;
   currentPage=1; allCats=[]; excludedCats=new Set(); featuredOnly=false;
   sortMode='date'; sortDir='desc';

@@ -380,7 +380,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   </div>
   <div class="topnav-right"></div>
 </nav>
-<div id="fetchBar" style="height:3px;background:var(--twitch-surface2);position:sticky;top:50px;z-index:49;overflow:hidden;">
+<div id="fetchBar" style="height:3px;background:var(--twitch-surface2);position:fixed;top:70px;left:0;right:0;z-index:99;overflow:hidden;">
   <div id="fetchBarFill" style="height:100%;width:0%;background:var(--twitch-purple);transition:width .4s ease;box-shadow:0 0 8px rgba(145,71,255,.6);"></div>
 </div>
 
@@ -594,7 +594,14 @@ function resetToHome() {
   // Restore exact initial landing state
   document.getElementById('resultsArea').innerHTML = window._initialResultsHTML;
 
+  // Hide and reset progress bar
+  const barFill = document.getElementById('fetchBarFill');
+  const barWrap = document.getElementById('fetchBar');
+  if (barFill) { barFill.style.width='0%'; barFill.style.background='var(--twitch-purple)'; }
+  if (barWrap) { barWrap.style.opacity='0'; }
+
   setDefaultDates();
+  checkSearchReady();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -886,7 +893,7 @@ async function startBackgroundFetch() {
             allClips.push(...fresh);
             applyFilters();
             sortClips();
-            renderResults(true);
+            updateResultsInPlace();
           }
         } catch(e) {
           if (e.status === 429 || (e.message && e.message.includes('429'))) {
@@ -905,7 +912,7 @@ async function startBackgroundFetch() {
     // Re-render and update progress after each parallel group finishes
     applyFilters();
     sortClips();
-    renderResults(true);
+    updateResultsInPlace();
     updateFetchProgress(false, completedChunks, totalChunks);
   }
 
@@ -915,7 +922,7 @@ async function startBackgroundFetch() {
   hideRateToast();
   updateFetchProgress(true, totalChunks, totalChunks);
   if (lastParams.mode === 'channel' || lastParams.mode === 'both') buildCats();
-  renderResults(true);
+  updateResultsInPlace();
 }
 
 function isChunkExhausted(cursors, mode) {
@@ -1238,6 +1245,7 @@ function makeVodUrl(c) {
 }
 
 // ── RENDER ────────────────────────────────────
+// Full render — rebuilds the entire results area (used on first paint, sort change, page change)
 function renderResults(keepPage) {
   const total=filteredClips.length;
   const pages=Math.max(1,Math.ceil(total/perPage));
@@ -1256,7 +1264,7 @@ function renderResults(keepPage) {
   document.getElementById('resultsArea').innerHTML=`
     <div class="results-bar">
       <div style="display:flex;align-items:center;gap:12px;">
-        <div class="results-count">Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips</div>
+        <div class="results-count" id="resultsCount">Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips</div>
         <span id="fetchProgress" style="font-size:11px;font-weight:600;"></span>
       </div>
       <div class="sort-group">
@@ -1277,12 +1285,57 @@ function renderResults(keepPage) {
         </div>
       </div>
     </div>
-    <div class="clips-grid">${page.map((c,i)=>renderCard(c,mode,i)).join('')}</div>
-    ${pages>1?`<div class="pagination">
+    <div class="clips-grid" id="clipsGrid">${page.map((c,i)=>renderCard(c,mode,i)).join('')}</div>
+    ${pages>1?`<div class="pagination" id="clipsPagination">
       <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Previous</button>
       <span class="page-info">Page ${currentPage} of ${pages}</span>
       <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===pages?'disabled':''}>Next →</button>
-    </div>`:''}`;
+    </div>`:'<div id="clipsPagination"></div>'}`;
+}
+
+// Lightweight update — only patches the grid and counter, no full rebuild
+// Used during background fetching so the page doesn't flash
+function updateResultsInPlace() {
+  const grid = document.getElementById('clipsGrid');
+  const countEl = document.getElementById('resultsCount');
+  const paginationEl = document.getElementById('clipsPagination');
+  // If the structure isn't rendered yet, do a full render instead
+  if (!grid) { renderResults(true); return; }
+
+  const total = filteredClips.length;
+  const pages = Math.max(1, Math.ceil(total/perPage));
+  if (currentPage > pages) currentPage = pages;
+  const start = (currentPage-1)*perPage;
+  const page = filteredClips.slice(start, start+perPage);
+  const mode = lastParams.mode;
+
+  // Track which clip ids are already in the DOM
+  const existingIds = new Set([...grid.querySelectorAll('[data-clip-id]')].map(el=>el.dataset.clipId));
+
+  // Build new cards, only animate ones that are genuinely new
+  const newCards = page.map((c,i) => {
+    const isNew = !existingIds.has(c.id);
+    return renderCard(c, mode, isNew ? i : -1); // -1 = no animation
+  });
+
+  // Only update the grid if anything changed
+  const newHTML = newCards.join('');
+  if (grid.innerHTML !== newHTML) grid.innerHTML = newHTML;
+
+  // Update the count
+  if (countEl) countEl.innerHTML = `Showing <strong>${start+1}–${Math.min(start+perPage,total)}</strong> of <strong>${total}</strong> clips`;
+
+  // Update pagination quietly
+  if (paginationEl) {
+    if (pages > 1) {
+      paginationEl.innerHTML = `
+        <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Previous</button>
+        <span class="page-info">Page ${currentPage} of ${pages}</span>
+        <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===pages?'disabled':''}>Next →</button>`;
+    } else {
+      paginationEl.innerHTML = '';
+    }
+  }
 }
 
 function renderCard(c, mode, idx) {
@@ -1306,8 +1359,9 @@ function renderCard(c, mode, idx) {
     ?`<span style="color:var(--twitch-warning);font-weight:700" title="Views per day">⚡ ${vpdStr}/day</span>`
     :'';
 
-  const delay = Math.min(idx * 30, 300);
-  return `<div class="clip-card" style="animation-delay:${delay}ms">
+  const delay = idx >= 0 ? Math.min(idx * 30, 300) : 0;
+  const animStyle = idx >= 0 ? `animation:cardIn .22s ease ${delay}ms both` : 'animation:none';
+  return `<div class="clip-card" data-clip-id="${c.id}" style="${animStyle}">
     <div class="clip-thumb" onclick="openClip('${id}','${url}','${encodeURIComponent(c.title)}','${encodeURIComponent(subText)}','${url}','${vodEnc}')">
       <img src="${c.thumbnail_url||''}" alt="${t}" loading="lazy" onerror="this.style.opacity=0">
       <div class="thumb-overlay"><div class="play-circle"><svg width="13" height="15" viewBox="0 0 14 16" fill="white"><path d="M0 0l14 8-14 8z"/></svg></div></div>

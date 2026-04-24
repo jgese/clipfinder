@@ -1232,6 +1232,8 @@ function renderResults(keepPage) {
   const arrow=sortArrow();
 
   if (total===0) {
+    // If still fetching, keep the loading spinner rather than showing "No clips found"
+    if (bgFetchActive) return;
     document.getElementById('resultsArea').innerHTML=`<div class="state-container"><div class="state-icon">🔍</div><div class="state-title">No clips found</div><div class="state-body">Try widening your date range, adjusting your keyword, or checking spelling.</div></div>`;
     return;
   }
@@ -1380,8 +1382,6 @@ function clearAll() {
 }
 
 function goPage(p) { currentPage=p; renderResults(true); window.scrollTo({top:0,behavior:'smooth'}); }
-
-fu
 
 function openClip(idEnc,_u,titleEnc,subEnc,linkEnc,vodEnc) {
   const id=decodeURIComponent(idEnc);
